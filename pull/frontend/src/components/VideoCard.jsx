@@ -9,6 +9,15 @@ function formatDuration(secs) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function thumbSrc(url) {
+  if (!url) return ''
+  // Proxy non-YouTube thumbnails to bypass hotlink protection
+  if (/instagram|cdninstagram|fbcdn/i.test(url)) {
+    return `/proxy-thumb?url=${encodeURIComponent(url)}`
+  }
+  return url
+}
+
 export default function VideoCard({ info }) {
   if (!info) return null
 
@@ -37,7 +46,7 @@ export default function VideoCard({ info }) {
       >
         {thumbnail ? (
           <img
-            src={thumbnail}
+            src={thumbSrc(thumbnail)}
             alt={title}
             className="thumb-img"
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
@@ -89,6 +98,7 @@ export default function VideoCard({ info }) {
           </div>
         )}
         <h2
+          title={title}
           style={{
             fontFamily: '"Instrument Serif", Georgia, serif',
             fontSize: '22px',

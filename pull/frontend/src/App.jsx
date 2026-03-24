@@ -11,8 +11,24 @@ import { useDownloadStream } from './hooks/useDownloadStream'
 
 // ── Film grain SVG filter ─────────────────
 function GrainOverlay() {
+  const animRef = useRef(null)
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!animRef.current) return
+      if (document.hidden) {
+        animRef.current.pauseAnimations?.()
+      } else {
+        animRef.current.unpauseAnimations?.()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
   return (
     <svg
+      ref={animRef}
       className="grain-overlay"
       xmlns="http://www.w3.org/2000/svg"
       width="100%"
@@ -45,13 +61,18 @@ function GrainOverlay() {
 function CustomCursor() {
   const dotRef = useRef(null)
   const [expanded, setExpanded] = useState(false)
+  const rafRef = useRef(null)
 
   useEffect(() => {
     const move = (e) => {
-      if (dotRef.current) {
-        dotRef.current.style.left = e.clientX + 'px'
-        dotRef.current.style.top = e.clientY + 'px'
-      }
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(() => {
+        if (dotRef.current) {
+          dotRef.current.style.left = e.clientX + 'px'
+          dotRef.current.style.top = e.clientY + 'px'
+        }
+        rafRef.current = null
+      })
     }
 
     const over = (e) => {
@@ -65,6 +86,7 @@ function CustomCursor() {
     return () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseover', over)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [])
 
@@ -90,7 +112,7 @@ export default function App() {
   const [renameValue, setRenameValue] = useState('')
 
   const { info, loading: infoLoading, error: infoError, fetchInfo } = useVideoInfo()
-  const { lines, status, progress, startDownload, reset } = useDownloadStream()
+  const { lines, status, progress, speed, eta, startDownload, reset } = useDownloadStream()
 
   const handleHeroSubmit = async (submittedUrl) => {
     setUrl(submittedUrl)
@@ -154,8 +176,10 @@ export default function App() {
   }
 
   const handleConflictRename = () => {
+    const trimmed = renameValue.trim()
+    if (!trimmed) return
     setFileConflict(null)
-    doDownload('rename', renameValue)
+    doDownload('rename', trimmed)
   }
 
   const handleConflictCancel = () => {
@@ -242,6 +266,9 @@ export default function App() {
                 <DownloadButton
                   status={status}
                   progress={progress}
+                  speed={speed}
+                  eta={eta}
+                  filesize={info?.filesize}
                   onClick={status === 'idle' || status === 'done' || status === 'error' ? handleDownload : undefined}
                 />
               )}

@@ -30,11 +30,11 @@ async def save_download(title: str, url: str, thumbnail: str, platform: str, fmt
         await db.commit()
 
 
-async def get_history(limit: int = 10):
+async def get_history(limit: int = 10, offset: int = 0):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT * FROM downloads ORDER BY timestamp DESC LIMIT ?", (limit,)
+            "SELECT * FROM downloads ORDER BY timestamp DESC LIMIT ? OFFSET ?", (limit, offset)
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]

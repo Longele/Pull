@@ -2,12 +2,68 @@ import asyncio
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import threading
 from typing import AsyncGenerator
+from urllib.parse import urlparse
 
 COOKIES_PATH = os.path.join(os.path.dirname(__file__), "..", "cookies.txt")
+
+# Allowed URL schemes
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _find_ffmpeg() -> str | None:
+    """Find ffmpeg binary. Checks PATH first, then known winget location."""
+    import shutil
+    path = shutil.which("ffmpeg")
+    if path:
+        return os.path.dirname(path)
+    # Winget install location
+    winget_dir = os.path.join(
+        os.environ.get("LOCALAPPDATA", ""),
+        "Microsoft", "WinGet", "Packages",
+    )
+    if os.path.isdir(winget_dir):
+        for root, dirs, files in os.walk(winget_dir):
+            if "ffmpeg.exe" in files:
+                return root
+    return None
+
+
+FFMPEG_DIR = _find_ffmpeg()
+
+
+def validate_url(url: str) -> str | None:
+    """Validate URL. Returns error message or None if valid."""
+    if not url or not url.strip():
+        return "URL cannot be empty."
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "Invalid URL format."
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        return f"Unsupported URL scheme: {parsed.scheme or '(none)'}. Use http or https."
+    if not parsed.netloc:
+        return "Invalid URL: no host found."
+    # Block private/local IPs
+    host = parsed.hostname or ""
+    if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or host.startswith("192.168.") or host.startswith("10.") or host.startswith("172."):
+        return "URLs pointing to local/private networks are not allowed."
+    return None
+
+
+def sanitize_filename(name: str) -> str:
+    """Strip path components and dangerous characters from a filename."""
+    # Take only the basename — no directory traversal
+    name = os.path.basename(name)
+    # Remove characters invalid on Windows/Linux filesystems
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+    # Collapse whitespace
+    name = name.strip().strip('.')
+    return name or "download"
 
 
 def get_ytdlp_cmd() -> list[str]:
@@ -111,6 +167,8 @@ async def _fetch_photo_info(url: str) -> dict | None:
 
 async def fetch_info(url: str) -> dict:
     cmd = get_ytdlp_cmd() + ["--dump-json", "--age-limit", "99", url]
+    if FFMPEG_DIR:
+        cmd += ["--ffmpeg-location", FFMPEG_DIR]
     if os.path.isfile(COOKIES_PATH):
         cmd += ["--cookies", COOKIES_PATH]
 
@@ -156,6 +214,14 @@ async def fetch_info(url: str) -> dict:
         if ext and fid:
             formats.append({"id": fid, "ext": ext, "height": height, "note": note})
 
+    # Compute estimated filesize from best format
+    filesize = None
+    for f in reversed(data.get("formats", [])):
+        fs = f.get("filesize") or f.get("filesize_approx")
+        if fs:
+            filesize = fs
+            break
+
     return {
         "type": "video",
         "title": data.get("title", "Unknown"),
@@ -165,6 +231,7 @@ async def fetch_info(url: str) -> dict:
         "extractor": data.get("extractor_key") or data.get("extractor", ""),
         "webpage_url": data.get("webpage_url", url),
         "available_formats": formats,
+        "filesize": filesize,
     }
 
 
@@ -207,7 +274,7 @@ async def stream_download(
     os.makedirs(output_dir, exist_ok=True)
 
     if custom_filename:
-        # User provided a custom name
+        custom_filename = sanitize_filename(custom_filename)
         output_template = os.path.join(output_dir, custom_filename)
     elif overwrite == "rename":
         # Auto-rename handled via yt-dlp template; we'll let yt-dlp decide title
@@ -233,6 +300,9 @@ async def stream_download(
         "--age-limit", "99",
     ]
 
+    if FFMPEG_DIR:
+        cmd += ["--ffmpeg-location", FFMPEG_DIR]
+
     if overwrite == "yes":
         cmd += ["--force-overwrites"]
 
@@ -250,11 +320,18 @@ async def stream_download(
 
     cmd.append(url)
 
-    # Use sync subprocess + thread to avoid Windows asyncio subprocess issues
+    async for line in _run_subprocess_stream(cmd):
+        yield line
+
+
+async def _run_subprocess_stream(cmd: list[str]) -> AsyncGenerator[str, None]:
+    """Shared helper: run a subprocess, stream stdout lines, yield [DONE] or [ERROR]."""
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     loop = asyncio.get_running_loop()
+    failed = False
 
     def _reader():
+        nonlocal failed
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -270,6 +347,7 @@ async def stream_download(
         if rc == 0:
             loop.call_soon_threadsafe(queue.put_nowait, "\u2713 Done")
         else:
+            failed = True
             loop.call_soon_threadsafe(queue.put_nowait, f"ERROR: Process exited with code {rc}")
         loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
 
@@ -281,7 +359,7 @@ async def stream_download(
         if item is None:
             break
         yield item
-    yield "[DONE]"
+    yield "[ERROR]" if failed else "[DONE]"
 
 
 async def stream_photo_download(
@@ -302,34 +380,5 @@ async def stream_photo_download(
 
     cmd.append(url)
 
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-
-    def _reader():
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        assert proc.stdout is not None
-        for raw_line in proc.stdout:
-            line = raw_line.decode(errors="replace").rstrip()
-            if line:
-                loop.call_soon_threadsafe(queue.put_nowait, line)
-        proc.wait()
-        rc = proc.returncode
-        if rc == 0:
-            loop.call_soon_threadsafe(queue.put_nowait, "\u2713 Done")
-        else:
-            loop.call_soon_threadsafe(queue.put_nowait, f"ERROR: gallery-dl exited with code {rc}")
-        loop.call_soon_threadsafe(queue.put_nowait, None)
-
-    thread = threading.Thread(target=_reader, daemon=True)
-    thread.start()
-
-    while True:
-        item = await queue.get()
-        if item is None:
-            break
-        yield item
-    yield "[DONE]"
+    async for line in _run_subprocess_stream(cmd):
+        yield line

@@ -1,9 +1,18 @@
 import { motion, AnimatePresence } from 'framer-motion'
 
-export default function DownloadButton({ status, progress, onClick }) {
+function formatBytes(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KiB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MiB'
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GiB'
+}
+
+export default function DownloadButton({ status, progress, speed, eta, filesize, onClick }) {
   const isLoading = status === 'loading'
   const isDone = status === 'done'
   const isError = status === 'error'
+  const isIdle = status === 'idle'
 
   const bg = isDone
     ? '#4CAF7D'
@@ -31,6 +40,12 @@ export default function DownloadButton({ status, progress, onClick }) {
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', position: 'relative', zIndex: 1 }}
           >
             <span style={{ opacity: 0.6, fontSize: '11px', letterSpacing: '0.15em' }}>PULLING</span>
+            {(speed || eta) && (
+              <span style={{ opacity: 0.45, fontSize: '10px', letterSpacing: '0.08em', fontFamily: '"JetBrains Mono", monospace' }}>
+                {speed && <span>{speed}</span>}
+                {eta && <span style={{ marginLeft: '8px' }}>ETA {eta}</span>}
+              </span>
+            )}
           </motion.span>
         ) : isDone ? (
           <motion.span
@@ -61,9 +76,14 @@ export default function DownloadButton({ status, progress, onClick }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{ position: 'relative', zIndex: 1 }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', position: 'relative', zIndex: 1 }}
           >
             PULL IT
+            {filesize && (
+              <span style={{ opacity: 0.45, fontSize: '10px', letterSpacing: '0.08em', fontFamily: '"JetBrains Mono", monospace' }}>
+                ~ {formatBytes(filesize)}
+              </span>
+            )}
           </motion.span>
         )}
       </AnimatePresence>

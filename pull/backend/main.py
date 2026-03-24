@@ -1,16 +1,25 @@
+import os
+import urllib.request
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
 from database import init_db, save_download, get_history
-from downloader import fetch_info, stream_download, stream_photo_download, check_file_exists
+from downloader import fetch_info, stream_download, stream_photo_download, check_file_exists, validate_url, sanitize_filename
 
 app = FastAPI(title="PULL", version="1.0.0")
 
+_ALLOWED_ORIGINS = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://localhost:5180,http://127.0.0.1:5173,http://127.0.0.1:5180",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
@@ -22,6 +31,9 @@ async def startup():
 
 @app.get("/info")
 async def info(url: str = Query(..., description="Video URL")):
+    url_error = validate_url(url)
+    if url_error:
+        return {"error": url_error}
     try:
         return await fetch_info(url)
     except Exception as e:
@@ -31,6 +43,28 @@ async def info(url: str = Query(..., description="Video URL")):
 @app.get("/check-file")
 async def check_file(title: str = Query(...), ext: str = Query("mp4")):
     return check_file_exists(title, ext)
+
+
+@app.get("/proxy-thumb")
+async def proxy_thumb(url: str = Query(..., description="Thumbnail URL")):
+    """Proxy external thumbnails to bypass hotlink protection."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return Response(status_code=400)
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": f"{parsed.scheme}://{parsed.netloc}/",
+        })
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = resp.read()
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        return Response(content=data, media_type=content_type, headers={
+            "Cache-Control": "public, max-age=3600",
+        })
+    except Exception:
+        return Response(status_code=502)
 
 
 @app.get("/download/stream")
@@ -45,7 +79,16 @@ async def download_stream(
     custom_filename: str = Query(""),
     content_type: str = Query("video"),
 ):
-    # Fetch metadata for history (fire and forget style — best effort)
+    url_error = validate_url(url)
+    if url_error:
+        async def error_gen():
+            yield url_error
+            yield "[ERROR]"
+        return EventSourceResponse(error_gen())
+
+    if custom_filename:
+        custom_filename = sanitize_filename(custom_filename)
+
     async def generator():
         title = ""
         thumbnail = ""
@@ -103,5 +146,5 @@ async def download_stream(
 
 
 @app.get("/history")
-async def history():
-    return await get_history(10)
+async def history(limit: int = Query(10, ge=1, le=100), offset: int = Query(0, ge=0)):
+    return await get_history(limit, offset)

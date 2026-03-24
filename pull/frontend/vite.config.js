@@ -10,6 +10,7 @@ export default defineConfig({
       '/check-file': 'http://localhost:5100',
       '/download': 'http://localhost:5100',
       '/history': 'http://localhost:5100',
+      '/proxy-thumb': 'http://localhost:5100',
     },
   },
 })

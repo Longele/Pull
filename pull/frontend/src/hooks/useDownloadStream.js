@@ -6,6 +6,8 @@ export function useDownloadStream() {
   const [lines, setLines] = useState([])
   const [status, setStatus] = useState('idle') // idle | loading | done | error
   const [progress, setProgress] = useState(0)
+  const [speed, setSpeed] = useState('')
+  const [eta, setEta] = useState('')
   const esRef = useRef(null)
   const doneRef = useRef(false)
 
@@ -16,6 +18,8 @@ export function useDownloadStream() {
     setLines([])
     setStatus('loading')
     setProgress(0)
+    setSpeed('')
+    setEta('')
     doneRef.current = false
 
     const params = new URLSearchParams({
@@ -41,18 +45,33 @@ export function useDownloadStream() {
       if (text === '[DONE]') {
         doneRef.current = true
         es.close()
+        esRef.current = null
         setStatus('done')
         setProgress(100)
+        setSpeed('')
+        setEta('')
         return
       }
 
-      // Detect progress percent from yt-dlp lines like "[download]  45.2% of ..."
+      if (text === '[ERROR]') {
+        doneRef.current = true
+        es.close()
+        esRef.current = null
+        setStatus('error')
+        return
+      }
+
+      // Parse yt-dlp progress: "[download]  45.2% of ~12.34MiB at 2.50MiB/s ETA 00:04"
       const pctMatch = text.match(/(\d+\.\d+)%/)
       if (pctMatch) {
-        const pct = parseFloat(pctMatch[1])
-        // Cap at 90 until confirmed done
-        setProgress(Math.min(pct, 90))
+        setProgress(Math.min(parseFloat(pctMatch[1]), 95))
       }
+
+      const speedMatch = text.match(/at\s+([\d.]+\s*[KMG]iB\/s)/i)
+      if (speedMatch) setSpeed(speedMatch[1])
+
+      const etaMatch = text.match(/ETA\s+(\d+:\d+(?::\d+)?)/)
+      if (etaMatch) setEta(etaMatch[1])
 
       let type = 'normal'
       if (text.includes('%')) type = 'progress'
@@ -64,6 +83,7 @@ export function useDownloadStream() {
 
     es.onerror = () => {
       es.close()
+      esRef.current = null
       if (!doneRef.current) {
         setStatus('error')
       }
@@ -71,11 +91,16 @@ export function useDownloadStream() {
   }, [])
 
   const reset = useCallback(() => {
-    if (esRef.current) esRef.current.close()
+    if (esRef.current) {
+      esRef.current.close()
+      esRef.current = null
+    }
     setLines([])
     setStatus('idle')
     setProgress(0)
+    setSpeed('')
+    setEta('')
   }, [])
 
-  return { lines, status, progress, startDownload, reset }
+  return { lines, status, progress, speed, eta, startDownload, reset }
 }
