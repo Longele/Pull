@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import Merge from './operations/Merge'
 import Split from './operations/Split'
 import Compress from './operations/Compress'
@@ -135,7 +135,6 @@ function Sidebar({ active, onSelect }) {
 export default function FolioTool() {
   const [activeOp, setActiveOp] = useState('merge')
 
-  const ActiveComponent = OP_COMPONENTS[activeOp] || Merge
   const activeItem = NAV_ITEMS.find((n) => n.id === activeOp) || NAV_ITEMS[0]
 
   return (
@@ -157,18 +156,17 @@ export default function FolioTool() {
           </div>
         </div>
 
-        {/* Operation panel */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeOp}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-          >
-            <ActiveComponent />
-          </motion.div>
-        </AnimatePresence>
+        {/* Operation panels — all mounted so upload state survives tab switches */}
+        <div style={{ position: 'relative' }}>
+          {NAV_ITEMS.map(({ id }) => {
+            const Comp = OP_COMPONENTS[id]
+            return (
+              <div key={id} style={{ display: activeOp === id ? 'block' : 'none' }}>
+                <Comp />
+              </div>
+            )
+          })}
+        </div>
       </main>
     </div>
   )
