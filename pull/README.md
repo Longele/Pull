@@ -50,20 +50,6 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
-### 4. Cookies for Private/Age-Restricted Content
-
-To download from Instagram, Twitter/X (private), or age-restricted YouTube videos, export your browser cookies and place the file at:
-
-```
-pull/cookies.txt
-```
-
-Use a browser extension like **Get cookies.txt LOCALLY** (Chrome/Firefox) to export in Netscape format. The backend will automatically detect and pass it to yt-dlp.
-
-> ⚠️ **Never share your cookies.txt file.** It contains your login session.
-
----
-
 ## Supported Sites
 
 PULL supports **1000+ sites** via yt-dlp, including:
@@ -114,7 +100,5 @@ Files are saved to `pull/downloads/` automatically.
 **`yt-dlp not found`** → Run `pip install yt-dlp` or `pip install -r requirements.txt`
 
 **CORS errors** → Make sure the backend is running on port 5050 before starting the frontend.
-
-**Instagram / private content fails** → Add a valid `cookies.txt` (see above).
 
 **4K downloads require merging** → Ensure `ffmpeg` is installed and in your PATH. Download from [ffmpeg.org](https://ffmpeg.org).

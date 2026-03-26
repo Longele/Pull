@@ -9,8 +9,6 @@ import threading
 from typing import AsyncGenerator
 from urllib.parse import urlparse
 
-COOKIES_PATH = os.path.join(os.path.dirname(__file__), "..", "cookies.txt")
-
 # Allowed URL schemes
 _ALLOWED_SCHEMES = {"http", "https"}
 
@@ -107,8 +105,6 @@ def _run_info_cmd(cmd: list[str]) -> tuple[str, str, int]:
 async def _fetch_photo_info(url: str) -> dict | None:
     """Try gallery-dl --dump-json to detect photo content. Returns info dict or None."""
     cmd = get_gallerydl_cmd() + ["--dump-json", url]
-    if os.path.isfile(COOKIES_PATH):
-        cmd += ["--cookies", COOKIES_PATH]
 
     loop = asyncio.get_running_loop()
     try:
@@ -120,10 +116,7 @@ async def _fetch_photo_info(url: str) -> dict | None:
         stderr_lower = (stderr or "").lower()
         if "login" in stderr_lower or "redirect" in stderr_lower:
             return {
-                "error": (
-                    "This appears to be a photo post. Instagram requires login cookies — "
-                    "place a cookies.txt file next to the backend folder to enable downloads."
-                )
+                "error": "This appears to be a private or login-restricted post that cannot be downloaded."
             }
         return None
 
@@ -169,8 +162,6 @@ async def fetch_info(url: str) -> dict:
     cmd = get_ytdlp_cmd() + ["--dump-json", "--age-limit", "99", url]
     if FFMPEG_DIR:
         cmd += ["--ffmpeg-location", FFMPEG_DIR]
-    if os.path.isfile(COOKIES_PATH):
-        cmd += ["--cookies", COOKIES_PATH]
 
     loop = asyncio.get_running_loop()
     stdout, stderr, returncode = await loop.run_in_executor(None, _run_info_cmd, cmd)
@@ -185,7 +176,7 @@ async def fetch_info(url: str) -> dict:
             return photo_info
 
     if is_zero_items:
-        return {"error": "No downloadable content found. If this is a photo post, place a cookies.txt file in the project folder."}
+        return {"error": "No downloadable content found."}
 
     if stdout:
         # yt-dlp may output multiple JSON lines for playlists — use the first one
@@ -315,9 +306,6 @@ async def stream_download(
     if embed_thumbnail:
         cmd += ["--embed-thumbnail"]
 
-    if os.path.isfile(COOKIES_PATH):
-        cmd += ["--cookies", COOKIES_PATH]
-
     cmd.append(url)
 
     async for line in _run_subprocess_stream(cmd):
@@ -374,9 +362,6 @@ async def stream_photo_download(
         "--dest", output_dir,
         "-o", "directory=[]",
     ]
-
-    if os.path.isfile(COOKIES_PATH):
-        cmd += ["--cookies", COOKIES_PATH]
 
     cmd.append(url)
 

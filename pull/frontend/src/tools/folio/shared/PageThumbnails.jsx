@@ -103,7 +103,7 @@ export default function PageThumbnails({
                   display: 'block',
                   transform: `rotate(${rotation}deg)`,
                   transition: 'transform 0.25s ease',
-                  filter: 'saturate(0.1) brightness(0.9)',
+                  filter: 'brightness(0.92)',
                 }}
               />
             ) : (

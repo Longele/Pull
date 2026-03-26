@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useFolioFile } from '../FolioContext'
 import DropZone from '../shared/DropZone'
 import ProgressBanner from '../shared/ProgressBanner'
 import EmptyState from '../shared/EmptyState'
@@ -9,30 +10,13 @@ import { triggerDownload } from '../shared/useFolioUpload'
 const ACCENT = '#7EB88A'
 
 export default function Split() {
-  const [fileData, setFileData] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const { fileData, uploading, handleFile, uploadError } = useFolioFile()
   const [selected, setSelected] = useState(new Set())
   const [opState, setOpState] = useState(null)
   const [opMessage, setOpMessage] = useState('')
 
-  async function handleFile(file) {
-    setUploading(true)
-    setSelected(new Set())
-    setFileData(null)
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const res = await fetch('/folio/upload', { method: 'POST', body: form })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload failed') }
-      const data = await res.json()
-      setFileData(data)
-    } catch (e) {
-      setOpState('error')
-      setOpMessage(e.message)
-    } finally {
-      setUploading(false)
-    }
-  }
+  useEffect(() => { setSelected(new Set()); setOpState(null); setOpMessage('') }, [fileData?.file_id])
+  useEffect(() => { if (uploadError) { setOpState('error'); setOpMessage(uploadError) } }, [uploadError])
 
   function togglePage(i) {
     setSelected((prev) => {

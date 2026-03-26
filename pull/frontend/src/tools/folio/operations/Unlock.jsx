@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useFolioFile } from '../FolioContext'
 import DropZone from '../shared/DropZone'
 import ProgressBanner from '../shared/ProgressBanner'
 import EmptyState from '../shared/EmptyState'
@@ -7,31 +8,14 @@ import { triggerDownload } from '../shared/useFolioUpload'
 const ACCENT = '#7EB88A'
 
 export default function Unlock() {
-  const [fileData, setFileData] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const { fileData, uploading, handleFile, uploadError } = useFolioFile()
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [opState, setOpState] = useState(null)
   const [opMessage, setOpMessage] = useState('')
 
-  async function handleFile(file) {
-    setUploading(true)
-    setFileData(null)
-    setPassword('')
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const res = await fetch('/folio/upload', { method: 'POST', body: form })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload failed') }
-      const data = await res.json()
-      setFileData({ ...data, originalName: file.name })
-    } catch (e) {
-      setOpState('error')
-      setOpMessage(e.message)
-    } finally {
-      setUploading(false)
-    }
-  }
+  useEffect(() => { setPassword(''); setOpState(null); setOpMessage('') }, [fileData?.file_id])
+  useEffect(() => { if (uploadError) { setOpState('error'); setOpMessage(uploadError) } }, [uploadError])
 
   async function handleUnlock() {
     if (!fileData) return

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { FolioFileContext } from './FolioContext'
 import Merge from './operations/Merge'
 import Split from './operations/Split'
 import Compress from './operations/Compress'
@@ -135,6 +136,29 @@ function Sidebar({ active, onSelect }) {
 export default function FolioTool() {
   const [activeOp, setActiveOp] = useState('merge')
 
+  // Shared PDF file — persists across all single-PDF operations
+  const [sharedFileData, setSharedFileData] = useState(null)
+  const [sharedUploading, setSharedUploading] = useState(false)
+  const [sharedUploadError, setSharedUploadError] = useState(null)
+
+  async function handleSharedFile(file) {
+    setSharedUploading(true)
+    setSharedFileData(null)
+    setSharedUploadError(null)
+    const form = new FormData()
+    form.append('file', file)
+    try {
+      const res = await fetch('/folio/upload', { method: 'POST', body: form })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload failed') }
+      const data = await res.json()
+      setSharedFileData({ ...data, originalName: file.name })
+    } catch (e) {
+      setSharedUploadError(e.message || 'Upload failed.')
+    } finally {
+      setSharedUploading(false)
+    }
+  }
+
   const activeItem = NAV_ITEMS.find((n) => n.id === activeOp) || NAV_ITEMS[0]
 
   return (
@@ -156,17 +180,18 @@ export default function FolioTool() {
           </div>
         </div>
 
-        {/* Operation panels — all mounted so upload state survives tab switches */}
-        <div style={{ position: 'relative' }}>
-          {NAV_ITEMS.map(({ id }) => {
-            const Comp = OP_COMPONENTS[id]
-            return (
-              <div key={id} style={{ display: activeOp === id ? 'block' : 'none' }}>
-                <Comp />
-              </div>
-            )
-          })}
-        </div>
+        {/* Operation panels — file state lives in context so it persists across switches */}
+        <FolioFileContext.Provider value={{
+          fileData: sharedFileData,
+          uploading: sharedUploading,
+          uploadError: sharedUploadError,
+          handleFile: handleSharedFile,
+        }}>
+          {(() => {
+            const Comp = OP_COMPONENTS[activeOp]
+            return Comp ? <Comp key={activeOp} /> : null
+          })()}
+        </FolioFileContext.Provider>
       </main>
     </div>
   )

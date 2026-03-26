@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useFolioFile } from '../FolioContext'
 import { motion } from 'framer-motion'
 import DropZone from '../shared/DropZone'
 import ProgressBanner from '../shared/ProgressBanner'
@@ -14,31 +15,14 @@ const PRESETS = [
 ]
 
 export default function Compress() {
-  const [fileData, setFileData] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const { fileData, uploading, handleFile, uploadError } = useFolioFile()
   const [quality, setQuality] = useState('ebook')
   const [opState, setOpState] = useState(null)
   const [opMessage, setOpMessage] = useState('')
   const [result, setResult] = useState(null) // { original_size, compressed_size, savings_pct }
 
-  async function handleFile(file) {
-    setUploading(true)
-    setFileData(null)
-    setResult(null)
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const res = await fetch('/folio/upload', { method: 'POST', body: form })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload failed') }
-      const data = await res.json()
-      setFileData({ ...data, originalName: file.name })
-    } catch (e) {
-      setOpState('error')
-      setOpMessage(e.message)
-    } finally {
-      setUploading(false)
-    }
-  }
+  useEffect(() => { setResult(null); setOpState(null); setOpMessage('') }, [fileData?.file_id])
+  useEffect(() => { if (uploadError) { setOpState('error'); setOpMessage(uploadError) } }, [uploadError])
 
   async function handleCompress() {
     if (!fileData) return

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useFolioFile } from '../FolioContext'
 import DropZone from '../shared/DropZone'
 import ProgressBanner from '../shared/ProgressBanner'
 import EmptyState from '../shared/EmptyState'
@@ -132,17 +133,18 @@ function SignaturePad({ onSignature }) {
 }
 
 // ── PDF page preview with click-to-place ─────────────────────────────────────
-function PDFPreview({ fileId, pageDims, sigData, sigPos, sigWidth, onPlace }) {
+function PDFPreview({ fileId, page = 0, pageDims, sigData, sigPos, sigWidth, onPlace }) {
   const [thumb, setThumb] = useState(null)
   const imgRef = useRef(null)
 
   useEffect(() => {
     if (!fileId) return
-    fetch(`/folio/thumbnail?file_id=${fileId}&page=0`)
+    setThumb(null)
+    fetch(`/folio/thumbnail?file_id=${fileId}&page=${page}`)
       .then((r) => r.json())
       .then((d) => setThumb(d.data))
       .catch(() => {})
-  }, [fileId])
+  }, [fileId, page])
 
   function handleClick(e) {
     if (!imgRef.current) return
@@ -162,9 +164,9 @@ function PDFPreview({ fileId, pageDims, sigData, sigPos, sigWidth, onPlace }) {
         <img
           ref={imgRef}
           src={thumb}
-          alt="Page 1"
+          alt={`Page ${page + 1}`}
           onClick={handleClick}
-          style={{ width: '100%', display: 'block', borderRadius: '2px', cursor: 'crosshair', filter: 'brightness(0.85)' }}
+          style={{ width: '100%', display: 'block', borderRadius: '2px', cursor: 'crosshair' }}
         />
       ) : (
         <div style={{ width: '100%', aspectRatio: '0.707', background: '#111', borderRadius: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -206,32 +208,18 @@ function PDFPreview({ fileId, pageDims, sigData, sigPos, sigWidth, onPlace }) {
 }
 
 export default function Sign() {
-  const [fileData, setFileData] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const { fileData, uploading, handleFile, uploadError } = useFolioFile()
   const [sigData, setSigData] = useState(null)
   const [sigPos, setSigPos] = useState(null)
   const [sigWidth, setSigWidth] = useState(150) // PDF points
+  const [selectedPage, setSelectedPage] = useState(0)
   const [opState, setOpState] = useState(null)
   const [opMessage, setOpMessage] = useState('')
 
-  async function handleFile(file) {
-    setUploading(true)
-    setFileData(null)
-    setSigPos(null)
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const res = await fetch('/folio/upload', { method: 'POST', body: form })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload failed') }
-      const data = await res.json()
-      setFileData(data)
-    } catch (e) {
-      setOpState('error')
-      setOpMessage(e.message)
-    } finally {
-      setUploading(false)
-    }
-  }
+  useEffect(() => { setSigPos(null); setSelectedPage(0); setOpState(null); setOpMessage('') }, [fileData?.file_id])
+  // Reset placement when page changes
+  useEffect(() => { setSigPos(null) }, [selectedPage])
+  useEffect(() => { if (uploadError) { setOpState('error'); setOpMessage(uploadError) } }, [uploadError])
 
   async function handleSign() {
     if (!fileData || !sigData || !sigPos) return
@@ -241,7 +229,7 @@ export default function Sign() {
       await triggerDownload('/folio/sign', 'POST', {
         file_id: fileData.file_id,
         sig_data: sigData,
-        page: 0,
+        page: selectedPage,
         x: sigPos.x,
         y: sigPos.y,
         w: sigWidth,
@@ -292,12 +280,47 @@ export default function Sign() {
 
           {/* Right: PDF preview */}
           <div>
-            <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '10px', letterSpacing: '0.1em', color: 'rgba(240,235,225,0.25)', marginBottom: '10px' }}>
-              PLACEMENT {!sigPos && '— click to place'}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '10px', letterSpacing: '0.1em', color: 'rgba(240,235,225,0.25)' }}>
+                PLACEMENT {!sigPos && '— click to place'}
+              </div>
+              {fileData.page_count > 1 && (
+                <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '10px', color: 'rgba(240,235,225,0.25)', letterSpacing: '0.06em' }}>
+                  PAGE <span style={{ color: ACCENT }}>{selectedPage + 1}</span> / {fileData.page_count}
+                </div>
+              )}
             </div>
+
+            {/* Page picker */}
+            {fileData.page_count > 1 && (
+              <div style={{
+                display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px',
+                maxHeight: '72px', overflowY: 'auto',
+              }}>
+                {Array.from({ length: fileData.page_count }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedPage(i)}
+                    style={{
+                      minWidth: '28px', height: '26px', padding: '0 6px',
+                      background: selectedPage === i ? `${ACCENT}20` : 'transparent',
+                      border: `0.5px solid ${selectedPage === i ? ACCENT : 'rgba(255,255,255,0.08)'}`,
+                      borderRadius: '2px',
+                      color: selectedPage === i ? ACCENT : 'rgba(240,235,225,0.35)',
+                      fontFamily: '"JetBrains Mono", monospace', fontSize: '10px',
+                      cursor: 'pointer', transition: 'all 0.12s',
+                    }}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <PDFPreview
               fileId={fileData.file_id}
-              pageDims={fileData.page_dims?.[0]}
+              page={selectedPage}
+              pageDims={fileData.page_dims?.[selectedPage]}
               sigData={sigData}
               sigPos={sigPos}
               sigWidth={sigWidth}

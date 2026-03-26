@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useFolioFile } from '../FolioContext'
 import DropZone from '../shared/DropZone'
 import ProgressBanner from '../shared/ProgressBanner'
 import EmptyState from '../shared/EmptyState'
@@ -26,8 +27,7 @@ const COLOR_SWATCHES = [
 ]
 
 export default function Watermark() {
-  const [fileData, setFileData] = useState(null)
-  const [uploading, setUploading] = useState(false)
+  const { fileData, uploading, handleFile, uploadError } = useFolioFile()
   const [text, setText] = useState('CONFIDENTIAL')
   const [opacity, setOpacity] = useState(0.15)
   const [fontSize, setFontSize] = useState(48)
@@ -38,30 +38,19 @@ export default function Watermark() {
   const [opState, setOpState] = useState(null)
   const [opMessage, setOpMessage] = useState('')
 
-  async function handleFile(file) {
-    setUploading(true)
-    setFileData(null)
+  // Fetch thumbnail when a new file is loaded
+  useEffect(() => {
     setPreview(null)
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const res = await fetch('/folio/upload', { method: 'POST', body: form })
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Upload failed') }
-      const data = await res.json()
-      setFileData(data)
-      // Load first page thumbnail
-      const thumbRes = await fetch(`/folio/thumbnail?file_id=${data.file_id}&page=0`)
-      if (thumbRes.ok) {
-        const thumbData = await thumbRes.json()
-        setPreview(thumbData.data)
-      }
-    } catch (e) {
-      setOpState('error')
-      setOpMessage(e.message)
-    } finally {
-      setUploading(false)
-    }
-  }
+    setOpState(null)
+    setOpMessage('')
+    if (!fileData?.file_id) return
+    fetch(`/folio/thumbnail?file_id=${fileData.file_id}&page=0`)
+      .then((r) => r.json())
+      .then((d) => setPreview(d.data))
+      .catch(() => {})
+  }, [fileData?.file_id])
+
+  useEffect(() => { if (uploadError) { setOpState('error'); setOpMessage(uploadError) } }, [uploadError])
 
   async function handleApply() {
     if (!fileData || !text.trim()) return
@@ -175,7 +164,7 @@ export default function Watermark() {
             <Label>PREVIEW — PAGE 1</Label>
             <div style={{ position: 'relative', marginTop: '8px' }}>
               {preview ? (
-                <img src={preview} alt="Page 1" style={{ width: '100%', borderRadius: '2px', filter: 'brightness(0.85)', display: 'block' }} />
+                <img src={preview} alt="Page 1" style={{ width: '100%', borderRadius: '2px', display: 'block' }} />
               ) : (
                 <div style={{ width: '100%', aspectRatio: '0.707', background: '#111', borderRadius: '2px' }} />
               )}

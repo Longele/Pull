@@ -156,7 +156,7 @@ async def thumbnail(
             raise HTTPException(status_code=400, detail="Page index out of range.")
         p = doc.load_page(page)
         mat = fitz.Matrix(150 / 72, 150 / 72)  # 150 dpi
-        pix = p.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
+        pix = p.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
         png_bytes = pix.tobytes("png")
         doc.close()
     except HTTPException:
